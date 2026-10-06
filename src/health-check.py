@@ -121,6 +121,12 @@ def get_disk_usage(path="/data/ethereum"):
         return 0, 0, 0
 
 
+def make_bar(percent, length=10):
+    """Render a compact progress bar, readable on mobile."""
+    filled = int(length * percent / 100)
+    return "█" * filled + "░" * (length - filled)
+
+
 def send_discord_alert(title, status_fields, critical=False):
     """Send alert to Discord with formatted embed."""
     if not DISCORD_WEBHOOK_URL:
@@ -195,23 +201,23 @@ def main():
     if cpu_percent > CPU_THRESHOLD:
         alerts.append({
             "name": "⚠️  CPU High",
-            "value": f"{cpu_percent}% (threshold: {CPU_THRESHOLD}%)",
-            "inline": True
+            "value": f"{cpu_percent}% (seuil: {CPU_THRESHOLD}%)",
+            "inline": False
         })
 
     if ram_percent > RAM_THRESHOLD:
         alerts.append({
             "name": "⚠️  RAM High",
-            "value": f"{ram_percent}% ({ram_gb:.1f}GB / {ram_total_gb:.1f}GB)",
-            "inline": True
+            "value": f"{ram_percent}% ({ram_gb:.1f}/{ram_total_gb:.1f}GB)",
+            "inline": False
         })
         critical = True
 
     if disk_percent > DISK_THRESHOLD:
         alerts.append({
             "name": "⚠️  Disk High",
-            "value": f"{disk_percent}% ({disk_used:.1f}GB / {disk_total:.1f}GB)",
-            "inline": True
+            "value": f"{disk_percent}% ({disk_used:.0f}/{disk_total:.0f}GB)",
+            "inline": False
         })
         critical = True
 
@@ -219,20 +225,38 @@ def main():
         ram_increase = state["ram_history"][-1]["percent"] - state["ram_history"][0]["percent"]
         if ram_increase > RAM_INCREASE_THRESHOLD:
             alerts.append({
-                "name": "📈 RAM Increasing",
-                "value": f"+{ram_increase:.1f}% over {len(state['ram_history'])*5}min",
-                "inline": True
+                "name": "📈 RAM en hausse",
+                "value": f"+{ram_increase:.1f}% sur {len(state['ram_history'])*5}min",
+                "inline": False
             })
 
     status_fields = [
-        {"name": "⏱️  Uptime", "value": uptime_str, "inline": True},
-        {"name": "Nethermind", "value": "✅ Online" if nethermind_ok else "🚫 Offline", "inline": True},
-        {"name": "Lighthouse", "value": "✅ Online" if lighthouse_ok else "🚫 Offline", "inline": True},
-        {"name": "📊 CPU", "value": f"{cpu_percent}% (load: {cpu_load[0]:.2f}, {cpu_load[1]:.2f}, {cpu_load[2]:.2f})", "inline": True},
-        {"name": "💾 RAM", "value": f"{ram_percent}% ({ram_gb:.1f}GB / {ram_total_gb:.1f}GB)", "inline": True},
-        {"name": "💿 Disk (/data/ethereum)", "value": f"{disk_percent}% ({disk_used:.1f}GB / {disk_total:.1f}GB)", "inline": True},
-        {"name": "🕐 Check Time", "value": datetime.now().strftime('%H:%M:%S'), "inline": True},
-        {"name": "🖥️  Hostname", "value": os.uname().nodename, "inline": True}
+        {
+            "name": "🧩 Services",
+            "value": (
+                f"{'✅' if nethermind_ok else '🚫'} Nethermind\n"
+                f"{'✅' if lighthouse_ok else '🚫'} Lighthouse"
+            ),
+            "inline": False
+        },
+        {
+            "name": "📊 Ressources",
+            "value": (
+                f"CPU   `{make_bar(cpu_percent)}` {cpu_percent}%\n"
+                f"RAM   `{make_bar(ram_percent)}` {ram_gb:.1f}/{ram_total_gb:.1f}GB\n"
+                f"Disk  `{make_bar(disk_percent)}` {disk_used:.0f}/{disk_total:.0f}GB"
+            ),
+            "inline": False
+        },
+        {
+            "name": "ℹ️ Infos",
+            "value": (
+                f"Load: {cpu_load[0]:.2f} / {cpu_load[1]:.2f} / {cpu_load[2]:.2f}\n"
+                f"Uptime: {uptime_str}\n"
+                f"{os.uname().nodename} • {datetime.now().strftime('%H:%M:%S')}"
+            ),
+            "inline": False
+        }
     ]
 
     if alerts:
