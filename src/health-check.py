@@ -87,6 +87,35 @@ def check_beacon_node():
         return False
 
 
+def get_nethermind_version():
+    """Get Nethermind client version via RPC."""
+    try:
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "web3_clientVersion",
+            "params": [],
+            "id": 1
+        }
+        response = requests.post(NETHERMIND_RPC_URL, json=payload, timeout=5)
+        result = response.json().get("result", "")
+        return result.split("/")[1] if "/" in result else result
+    except Exception as e:
+        print(f"Error getting Nethermind version: {e}")
+        return "unknown"
+
+
+def get_lighthouse_version():
+    """Get Lighthouse client version via Beacon API."""
+    try:
+        url = f"{BEACON_NODE_URL}/eth/v1/node/version"
+        response = requests.get(url, timeout=5)
+        result = response.json().get("data", {}).get("version", "")
+        return result.split("/")[1] if "/" in result else result
+    except Exception as e:
+        print(f"Error getting Lighthouse version: {e}")
+        return "unknown"
+
+
 def get_system_resources():
     """Get current CPU, RAM usage and load average."""
     cpu_percent = psutil.cpu_percent(interval=1)
@@ -166,7 +195,9 @@ def main():
     disk_percent, disk_used, disk_total = get_disk_usage()
 
     nethermind_ok = is_process_running("nethermind") and check_nethermind_rpc()
+    nethermind_version = get_nethermind_version() if nethermind_ok else "unknown"
     lighthouse_ok = is_process_running("lighthouse") and check_beacon_node()
+    lighthouse_version = get_lighthouse_version() if lighthouse_ok else "unknown"
 
     ram_gb = ram_used / (1024**3)
     ram_total_gb = ram_total / (1024**3)
@@ -234,8 +265,8 @@ def main():
         {
             "name": "🧩 Services",
             "value": (
-                f"{'✅' if nethermind_ok else '🚫'} Nethermind\n"
-                f"{'✅' if lighthouse_ok else '🚫'} Lighthouse"
+                f"{'✅' if nethermind_ok else '🚫'} Nethermind `{nethermind_version}`\n"
+                f"{'✅' if lighthouse_ok else '🚫'} Lighthouse `{lighthouse_version}`"
             ),
             "inline": False
         },
