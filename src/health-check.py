@@ -10,6 +10,7 @@ load_dotenv()
 
 BEACON_NODE_URL = os.getenv("BEACON_NODE_URL", "http://localhost:5052")
 NETHERMIND_RPC_URL = os.getenv("NETHERMIND_RPC_URL", "http://localhost:8545")
+MEV_BOOST_URL = os.getenv("MEV_BOOST_URL", "http://localhost:18550")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 CPU_THRESHOLD = int(os.getenv("CPU_THRESHOLD", "80"))
@@ -25,12 +26,15 @@ def read_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, 'r') as f:
-                return json.load(f)
+                state = json.load(f)
+                state.setdefault("mev_boost_down_count", 0)
+                return state
         except json.JSONDecodeError:
             pass
     return {
         "nethermind_down_count": 0,
         "lighthouse_down_count": 0,
+        "mev_boost_down_count": 0,
         "ram_history": []
     }
 
@@ -84,6 +88,17 @@ def check_beacon_node():
         return response.status_code in [200, 206]
     except Exception as e:
         print(f"Error checking Beacon Node: {e}")
+        return False
+
+
+def check_mev_boost():
+    """Check if mev-boost is responding (at least one relay reachable)."""
+    try:
+        url = f"{MEV_BOOST_URL}/eth/v1/builder/status"
+        response = requests.get(url, timeout=5)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Error checking mev-boost: {e}")
         return False
 
 
@@ -198,6 +213,7 @@ def main():
     nethermind_version = get_nethermind_version() if nethermind_ok else "unknown"
     lighthouse_ok = is_process_running("lighthouse") and check_beacon_node()
     lighthouse_version = get_lighthouse_version() if lighthouse_ok else "unknown"
+    mev_boost_ok = is_process_running("mev-boost") and check_mev_boost()
 
     ram_gb = ram_used / (1024**3)
     ram_total_gb = ram_total / (1024**3)
@@ -228,6 +244,17 @@ def main():
         critical = True
     else:
         state["lighthouse_down_count"] = 0
+
+    if not mev_boost_ok:
+        state["mev_boost_down_count"] += 1
+        alerts.append({
+            "name": "🚨 mev-boost",
+            "value": f"DOWN ({state['mev_boost_down_count']} checks)",
+            "inline": False
+        })
+        critical = True
+    else:
+        state["mev_boost_down_count"] = 0
 
     if cpu_percent > CPU_THRESHOLD:
         alerts.append({
@@ -266,7 +293,8 @@ def main():
             "name": "🧩 Services",
             "value": (
                 f"{'✅' if nethermind_ok else '🚫'} Nethermind `{nethermind_version}`\n"
-                f"{'✅' if lighthouse_ok else '🚫'} Lighthouse `{lighthouse_version}`"
+                f"{'✅' if lighthouse_ok else '🚫'} Lighthouse `{lighthouse_version}`\n"
+                f"{'✅' if mev_boost_ok else '🚫'} mev-boost"
             ),
             "inline": False
         },
@@ -310,7 +338,7 @@ def main():
         )
 
     write_state(state)
-    print(f"✅ Health check complete - Uptime: {uptime_str}, Nethermind: {'✅' if nethermind_ok else '🚨'}, Lighthouse: {'✅' if lighthouse_ok else '🚨'}, CPU: {cpu_percent}%, RAM: {ram_percent}%, Disk: {disk_percent}%")
+    print(f"✅ Health check complete - Uptime: {uptime_str}, Nethermind: {'✅' if nethermind_ok else '🚨'}, Lighthouse: {'✅' if lighthouse_ok else '🚨'}, mev-boost: {'✅' if mev_boost_ok else '🚨'}, CPU: {cpu_percent}%, RAM: {ram_percent}%, Disk: {disk_percent}%")
 
 
 if __name__ == "__main__":
