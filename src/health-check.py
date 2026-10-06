@@ -5,6 +5,9 @@ import subprocess
 import psutil
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BEACON_NODE_URL = os.getenv("BEACON_NODE_URL", "http://localhost:5052")
 NETHERMIND_RPC_URL = os.getenv("NETHERMIND_RPC_URL", "http://localhost:8545")
