@@ -4,7 +4,6 @@ import requests
 import subprocess
 import psutil
 from datetime import datetime, UTC
-from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,6 +14,7 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 CPU_THRESHOLD = int(os.getenv("CPU_THRESHOLD", "80"))
 RAM_THRESHOLD = int(os.getenv("RAM_THRESHOLD", "85"))
+DISK_THRESHOLD = int(os.getenv("DISK_THRESHOLD", "90"))
 RAM_INCREASE_THRESHOLD = int(os.getenv("RAM_INCREASE_THRESHOLD", "10"))
 
 STATE_FILE = os.path.join(os.getenv("GEMINI_TMP_DIR", "/tmp"), "health_check_state.json")
@@ -31,8 +31,6 @@ def read_state():
     return {
         "nethermind_down_count": 0,
         "lighthouse_down_count": 0,
-        "rpc_down_count": 0,
-        "last_alert_sent": None,
         "ram_history": []
     }
 
@@ -90,10 +88,37 @@ def check_beacon_node():
 
 
 def get_system_resources():
-    """Get current CPU and RAM usage."""
+    """Get current CPU, RAM usage and load average."""
     cpu_percent = psutil.cpu_percent(interval=1)
+    try:
+        cpu_load = os.getloadavg()
+    except AttributeError:
+        cpu_load = (0, 0, 0)
     ram = psutil.virtual_memory()
-    return cpu_percent, ram.percent, ram.used, ram.total
+    return cpu_percent, cpu_load, ram.percent, ram.used, ram.total
+
+
+def get_uptime():
+    """Get system uptime as formatted string."""
+    boot_time = datetime.fromtimestamp(psutil.boot_time())
+    uptime = datetime.now() - boot_time
+    days = uptime.days
+    hours, remainder = divmod(uptime.seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+    return f"{days}d {hours}h {minutes}m"
+
+
+def get_disk_usage(path="/data/ethereum"):
+    """Get disk usage for specified path."""
+    try:
+        usage = psutil.disk_usage(path)
+        used_gb = usage.used / (1024**3)
+        total_gb = usage.total / (1024**3)
+        percent = usage.percent
+        return percent, used_gb, total_gb
+    except Exception as e:
+        print(f"Error checking disk {path}: {e}")
+        return 0, 0, 0
 
 
 def send_discord_alert(title, status_fields, critical=False):
@@ -102,7 +127,7 @@ def send_discord_alert(title, status_fields, critical=False):
         print("⚠️ WARNING: DISCORD_WEBHOOK_URL not set")
         return False
 
-    color = 15158332 if critical else 3066993  # Red if critical, Green otherwise
+    color = 15158332 if critical else 3066993
 
     embed = {
         "title": title,
@@ -130,14 +155,16 @@ def send_discord_alert(title, status_fields, critical=False):
 
 def main():
     state = read_state()
-    cpu, ram, ram_used, ram_total = get_system_resources()
+    cpu_percent, cpu_load, ram_percent, ram_used, ram_total = get_system_resources()
+    uptime_str = get_uptime()
+    disk_percent, disk_used, disk_total = get_disk_usage()
 
     nethermind_ok = is_process_running("nethermind") and check_nethermind_rpc()
     lighthouse_ok = is_process_running("lighthouse") and check_beacon_node()
 
     ram_gb = ram_used / (1024**3)
     ram_total_gb = ram_total / (1024**3)
-    state["ram_history"].append({"timestamp": datetime.now().isoformat(), "percent": ram})
+    state["ram_history"].append({"timestamp": datetime.now().isoformat(), "percent": ram_percent})
     state["ram_history"] = state["ram_history"][-288:]
 
     alerts = []
@@ -165,17 +192,25 @@ def main():
     else:
         state["lighthouse_down_count"] = 0
 
-    if cpu > CPU_THRESHOLD:
+    if cpu_percent > CPU_THRESHOLD:
         alerts.append({
             "name": "⚠️  CPU High",
-            "value": f"{cpu}% (threshold: {CPU_THRESHOLD}%)",
+            "value": f"{cpu_percent}% (threshold: {CPU_THRESHOLD}%)",
             "inline": True
         })
 
-    if ram > RAM_THRESHOLD:
+    if ram_percent > RAM_THRESHOLD:
         alerts.append({
             "name": "⚠️  RAM High",
-            "value": f"{ram}% ({ram_gb:.1f}GB / {ram_total_gb:.1f}GB)",
+            "value": f"{ram_percent}% ({ram_gb:.1f}GB / {ram_total_gb:.1f}GB)",
+            "inline": True
+        })
+        critical = True
+
+    if disk_percent > DISK_THRESHOLD:
+        alerts.append({
+            "name": "⚠️  Disk High",
+            "value": f"{disk_percent}% ({disk_used:.1f}GB / {disk_total:.1f}GB)",
             "inline": True
         })
         critical = True
@@ -190,12 +225,14 @@ def main():
             })
 
     status_fields = [
+        {"name": "⏱️  Uptime", "value": uptime_str, "inline": True},
         {"name": "Nethermind", "value": "✅ Online" if nethermind_ok else "🚫 Offline", "inline": True},
         {"name": "Lighthouse", "value": "✅ Online" if lighthouse_ok else "🚫 Offline", "inline": True},
-        {"name": "CPU Usage", "value": f"📊 {cpu}%", "inline": True},
-        {"name": "RAM Usage", "value": f"💾 {ram}% ({ram_gb:.1f}GB)", "inline": True},
-        {"name": "Timestamp", "value": f"🕐 {datetime.now().strftime('%H:%M:%S')}", "inline": True},
-        {"name": "Hostname", "value": f"🖥️  {os.uname().nodename}", "inline": True}
+        {"name": "📊 CPU", "value": f"{cpu_percent}% (load: {cpu_load[0]:.2f}, {cpu_load[1]:.2f}, {cpu_load[2]:.2f})", "inline": True},
+        {"name": "💾 RAM", "value": f"{ram_percent}% ({ram_gb:.1f}GB / {ram_total_gb:.1f}GB)", "inline": True},
+        {"name": "💿 Disk (/data/ethereum)", "value": f"{disk_percent}% ({disk_used:.1f}GB / {disk_total:.1f}GB)", "inline": True},
+        {"name": "🕐 Check Time", "value": datetime.now().strftime('%H:%M:%S'), "inline": True},
+        {"name": "🖥️  Hostname", "value": os.uname().nodename, "inline": True}
     ]
 
     if alerts:
@@ -218,7 +255,7 @@ def main():
         )
 
     write_state(state)
-    print(f"✅ Health check complete - Nethermind: {'✅' if nethermind_ok else '🚨'}, Lighthouse: {'✅' if lighthouse_ok else '🚨'}, CPU: {cpu}%, RAM: {ram}%")
+    print(f"✅ Health check complete - Uptime: {uptime_str}, Nethermind: {'✅' if nethermind_ok else '🚨'}, Lighthouse: {'✅' if lighthouse_ok else '🚨'}, CPU: {cpu_percent}%, RAM: {ram_percent}%, Disk: {disk_percent}%")
 
 
 if __name__ == "__main__":
