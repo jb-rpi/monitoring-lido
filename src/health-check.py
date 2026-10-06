@@ -3,7 +3,7 @@ import json
 import requests
 import subprocess
 import psutil
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -107,7 +107,7 @@ def send_discord_alert(title, status_fields, critical=False):
     embed = {
         "title": title,
         "color": color,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(UTC).isoformat(),
         "fields": status_fields,
         "footer": {"text": "🖥️  Node Health Monitor"}
     }
