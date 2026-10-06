@@ -97,17 +97,19 @@ def get_system_resources():
 
 
 def send_discord_alert(title, status_fields, critical=False):
-    """Send alert to Discord with status fields."""
+    """Send alert to Discord with formatted embed."""
     if not DISCORD_WEBHOOK_URL:
+        print("⚠️ WARNING: DISCORD_WEBHOOK_URL not set")
         return False
 
-    color = 16711680 if critical else 16776960  # Red if critical, Yellow otherwise
+    color = 15158332 if critical else 3066993  # Red if critical, Green otherwise
 
     embed = {
         "title": title,
         "color": color,
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        "fields": status_fields
+        "fields": status_fields,
+        "footer": {"text": "🖥️  Node Health Monitor"}
     }
 
     payload = {"embeds": [embed]}
@@ -119,10 +121,10 @@ def send_discord_alert(title, status_fields, critical=False):
             timeout=10
         )
         response.raise_for_status()
-        print(f"Discord alert sent: {title}")
+        print(f"✅ Discord notification sent")
         return True
     except Exception as e:
-        print(f"Error sending Discord alert: {e}")
+        print(f"❌ Error sending Discord notification: {e}")
         return False
 
 
@@ -134,8 +136,9 @@ def main():
     lighthouse_ok = is_process_running("lighthouse") and check_beacon_node()
 
     ram_gb = ram_used / (1024**3)
+    ram_total_gb = ram_total / (1024**3)
     state["ram_history"].append({"timestamp": datetime.now().isoformat(), "percent": ram})
-    state["ram_history"] = state["ram_history"][-288:]  # Keep 24h at 5min intervals
+    state["ram_history"] = state["ram_history"][-288:]
 
     alerts = []
     critical = False
@@ -144,7 +147,7 @@ def main():
         state["nethermind_down_count"] += 1
         alerts.append({
             "name": "🚨 Nethermind",
-            "value": f"DOWN (count: {state['nethermind_down_count']})",
+            "value": f"DOWN ({state['nethermind_down_count']} checks)",
             "inline": False
         })
         critical = True
@@ -155,7 +158,7 @@ def main():
         state["lighthouse_down_count"] += 1
         alerts.append({
             "name": "🚨 Lighthouse",
-            "value": f"DOWN (count: {state['lighthouse_down_count']})",
+            "value": f"DOWN ({state['lighthouse_down_count']} checks)",
             "inline": False
         })
         critical = True
@@ -164,15 +167,15 @@ def main():
 
     if cpu > CPU_THRESHOLD:
         alerts.append({
-            "name": "⚠️ CPU High",
+            "name": "⚠️  CPU High",
             "value": f"{cpu}% (threshold: {CPU_THRESHOLD}%)",
             "inline": True
         })
 
     if ram > RAM_THRESHOLD:
         alerts.append({
-            "name": "⚠️ RAM High",
-            "value": f"{ram}% ({ram_gb:.1f}GB / {ram_total/(1024**3):.1f}GB)",
+            "name": "⚠️  RAM High",
+            "value": f"{ram}% ({ram_gb:.1f}GB / {ram_total_gb:.1f}GB)",
             "inline": True
         })
         critical = True
@@ -181,29 +184,31 @@ def main():
         ram_increase = state["ram_history"][-1]["percent"] - state["ram_history"][0]["percent"]
         if ram_increase > RAM_INCREASE_THRESHOLD:
             alerts.append({
-                "name": "⚠️ RAM Increasing",
+                "name": "📈 RAM Increasing",
                 "value": f"+{ram_increase:.1f}% over {len(state['ram_history'])*5}min",
                 "inline": True
             })
 
     status_fields = [
-        {"name": "✅ Nethermind", "value": "OK" if nethermind_ok else "DOWN", "inline": True},
-        {"name": "✅ Lighthouse", "value": "OK" if lighthouse_ok else "DOWN", "inline": True},
-        {"name": "📊 CPU", "value": f"{cpu}%", "inline": True},
-        {"name": "📊 RAM", "value": f"{ram}% ({ram_gb:.1f}GB)", "inline": True}
+        {"name": "Nethermind", "value": "✅ Online" if nethermind_ok else "🚫 Offline", "inline": True},
+        {"name": "Lighthouse", "value": "✅ Online" if lighthouse_ok else "🚫 Offline", "inline": True},
+        {"name": "CPU Usage", "value": f"📊 {cpu}%", "inline": True},
+        {"name": "RAM Usage", "value": f"💾 {ram}% ({ram_gb:.1f}GB)", "inline": True},
+        {"name": "Timestamp", "value": f"🕐 {datetime.now().strftime('%H:%M:%S')}", "inline": True},
+        {"name": "Hostname", "value": f"🖥️  {os.uname().nodename}", "inline": True}
     ]
 
     if alerts:
         status_fields.extend(alerts)
         send_discord_alert(
-            "🔔 Node Health Alert",
+            "🔔 Node Health Alert" if not critical else "🚨 Critical Alert",
             status_fields,
             critical=critical
         )
     else:
         status_fields.append({
             "name": "Status",
-            "value": "All systems nominal",
+            "value": "✨ All systems nominal",
             "inline": False
         })
         send_discord_alert(
@@ -213,7 +218,7 @@ def main():
         )
 
     write_state(state)
-    print(f"Health check complete - Nethermind: {'✅' if nethermind_ok else '🚨'}, Lighthouse: {'✅' if lighthouse_ok else '🚨'}, CPU: {cpu}%, RAM: {ram}%")
+    print(f"✅ Health check complete - Nethermind: {'✅' if nethermind_ok else '🚨'}, Lighthouse: {'✅' if lighthouse_ok else '🚨'}, CPU: {cpu}%, RAM: {ram}%")
 
 
 if __name__ == "__main__":
