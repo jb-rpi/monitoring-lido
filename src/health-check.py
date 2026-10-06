@@ -11,6 +11,7 @@ load_dotenv()
 BEACON_NODE_URL = os.getenv("BEACON_NODE_URL", "http://localhost:5052")
 NETHERMIND_RPC_URL = os.getenv("NETHERMIND_RPC_URL", "http://localhost:8545")
 MEV_BOOST_URL = os.getenv("MEV_BOOST_URL", "http://localhost:18550")
+MEV_BOOST_BIN = os.getenv("MEV_BOOST_BIN", "mev-boost")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 CPU_THRESHOLD = int(os.getenv("CPU_THRESHOLD", "80"))
@@ -100,6 +101,22 @@ def check_mev_boost():
     except Exception as e:
         print(f"Error checking mev-boost: {e}")
         return False
+
+
+def get_mev_boost_version():
+    """Get mev-boost version via its CLI --version flag."""
+    try:
+        result = subprocess.run(
+            [MEV_BOOST_BIN, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        output = (result.stdout or result.stderr).strip()
+        return output.split()[-1] if output else "unknown"
+    except Exception as e:
+        print(f"Error getting mev-boost version: {e}")
+        return "unknown"
 
 
 def get_nethermind_version():
@@ -214,6 +231,7 @@ def main():
     lighthouse_ok = is_process_running("lighthouse") and check_beacon_node()
     lighthouse_version = get_lighthouse_version() if lighthouse_ok else "unknown"
     mev_boost_ok = is_process_running("mev-boost") and check_mev_boost()
+    mev_boost_version = get_mev_boost_version() if mev_boost_ok else "unknown"
 
     ram_gb = ram_used / (1024**3)
     ram_total_gb = ram_total / (1024**3)
@@ -294,7 +312,7 @@ def main():
             "value": (
                 f"{'✅' if nethermind_ok else '🚫'} Nethermind `{nethermind_version}`\n"
                 f"{'✅' if lighthouse_ok else '🚫'} Lighthouse `{lighthouse_version}`\n"
-                f"{'✅' if mev_boost_ok else '🚫'} mev-boost"
+                f"{'✅' if mev_boost_ok else '🚫'} mev-boost `{mev_boost_version}`"
             ),
             "inline": False
         },
