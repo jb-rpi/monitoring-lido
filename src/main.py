@@ -3,6 +3,9 @@ import os
 import requests
 import json
 import time
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuration from environment variables
 BEACON_NODE_URL = os.getenv("BEACON_NODE_URL", "http://localhost:5052")
