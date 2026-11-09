@@ -10,7 +10,7 @@ load_dotenv()
 # Configuration from environment variables
 BEACON_NODE_URL = os.getenv("BEACON_NODE_URL", "http://localhost:5052")
 VALIDATOR_IDS = [v.strip() for v in (os.getenv("VALIDATOR_IDS") or os.getenv("VALIDATOR_ID") or "").split(",") if v.strip()]
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL") or os.getenv("DISCORD_WEBHOOK_URL")
 SLOTS_PER_EPOCH = 32
 MAX_EFFECTIVE_BALANCE_GWEI = 32_000_000_000
 
@@ -178,7 +178,7 @@ def main():
     if messages:
         message = "\n\n".join(messages)
         print(message)
-        send_discord_message(message, DISCORD_WEBHOOK_URL)
+        send_discord_message(message, ALERT_WEBHOOK_URL)
 
     write_all_status({k: v for k, v in statuses.items() if k in VALIDATOR_IDS})
 

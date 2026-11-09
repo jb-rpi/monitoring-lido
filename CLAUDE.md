@@ -27,12 +27,14 @@ python src/main.py
 ```
 
 ### Environment Variables
-Copy `.env.example` to `.env` (git-ignored) at the project root. `VALIDATOR_IDS` is a comma-separated list of validator indexes or public keys (legacy single `VALIDATOR_ID` is still accepted as fallback).
+Copy `.env.example` to `.env` (git-ignored) at the project root. `DISCORD_WEBHOOK_URL` is used by the health report (`health-check.py`); `ALERT_WEBHOOK_URL` is used by `alert.py` and validator alerts in `main.py` (falls back to `DISCORD_WEBHOOK_URL` if unset). `VALIDATOR_IDS` is a comma-separated list of validator indexes or public keys (legacy single `VALIDATOR_ID` is still accepted as fallback).
 
 ### Cron Integration
-The script is designed for cron execution. Example entry to run every 5 minutes:
+The script is designed for cron execution. Example entries (validators and alerts every 5 minutes, health report at 8h, 12h, 18h and 22h):
 ```cron
-*/5 * * * * cd /home/jb/Projects/monitoring-lido && source .venv/bin/activate && python src/main.py >> /var/log/monitoring-lido.log 2>&1
+*/5 * * * * cd /home/jb/Projects/monitoring-lido && .venv/bin/python src/main.py >> monitoring.log 2>&1
+*/5 * * * * cd /home/jb/Projects/monitoring-lido && .venv/bin/python src/alert.py >> monitoring.log 2>&1
+0 8,12,18,22 * * * cd /home/jb/Projects/monitoring-lido && .venv/bin/python src/health-check.py >> monitoring.log 2>&1
 ```
 
 ## Architecture

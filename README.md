@@ -18,7 +18,8 @@ cp .env.example .env
 
 - `BEACON_NODE_URL`: L'URL de votre nœud Lighthouse Beacon.
 - `VALIDATOR_IDS`: Liste d'index ou de clés publiques de validateurs, séparés par des virgules (`VALIDATOR_ID` reste accepté pour un seul validateur).
-- `DISCORD_WEBHOOK_URL`: L'URL du webhook Discord pour envoyer les notifications.
+- `DISCORD_WEBHOOK_URL`: Webhook Discord du rapport de santé (`health-check.py`).
+- `ALERT_WEBHOOK_URL`: Webhook Discord des alertes (`alert.py` et validateurs hors ligne). Optionnel : par défaut `DISCORD_WEBHOOK_URL`.
 
 ## Installation et Exécution
 
@@ -38,10 +39,12 @@ cp .env.example .env
 
 ## Intégration Cron
 
-Le script est conçu pour être exécuté régulièrement via un scheduler comme `cron`. Voici un exemple d'entrée cron pour exécuter le script toutes les 5 minutes :
+Les scripts sont conçus pour être exécuté régulièrement via un scheduler comme `cron`. Voici un exemple : validateurs et alertes toutes les 5 minutes, rapport de santé à 8h, 12h, 18h et 22h :
 
 ```cron
-*/5 * * * * cd /home/jb/Projects/monitoring-lido && source .venv/bin/activate && python src/main.py >> /var/log/monitoring-lido.log 2>&1
+*/5 * * * * cd /home/jb/Projects/monitoring-lido && .venv/bin/python src/main.py >> monitoring.log 2>&1
+*/5 * * * * cd /home/jb/Projects/monitoring-lido && .venv/bin/python src/alert.py >> monitoring.log 2>&1
+0 8,12,18,22 * * * cd /home/jb/Projects/monitoring-lido && .venv/bin/python src/health-check.py >> monitoring.log 2>&1
 ```
 
 Assurez-vous d'ajuster le chemin vers votre projet (`/home/jb/Projects/monitoring-lido`).

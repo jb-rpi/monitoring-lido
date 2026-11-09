@@ -3,7 +3,7 @@ import json
 import time
 
 from common import (
-    RAM_THRESHOLD, DISK_THRESHOLD,
+    RAM_THRESHOLD, DISK_THRESHOLD, ALERT_WEBHOOK_URL,
     is_process_running, check_nethermind_rpc, check_beacon_node, check_mev_boost,
     get_system_resources, get_disk_usage, send_discord_alert,
 )
@@ -70,13 +70,13 @@ def main():
 
     if to_send:
         fields = [{"name": k, "value": v, "inline": False} for k, v in to_send.items()]
-        if send_discord_alert("🚨 Critical Alert", fields, critical=True):
+        if send_discord_alert("🚨 Critical Alert", fields, critical=True, webhook_url=ALERT_WEBHOOK_URL):
             for k in to_send:
                 active[k] = now
 
     if resolved:
         fields = [{"name": k, "value": "Résolu", "inline": False} for k in resolved]
-        if send_discord_alert("✅ Problème résolu", fields, critical=False):
+        if send_discord_alert("✅ Problème résolu", fields, critical=False, webhook_url=ALERT_WEBHOOK_URL):
             for k in resolved:
                 del active[k]
 

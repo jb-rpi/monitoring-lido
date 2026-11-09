@@ -12,6 +12,7 @@ NETHERMIND_RPC_URL = os.getenv("NETHERMIND_RPC_URL", "http://localhost:8545")
 MEV_BOOST_URL = os.getenv("MEV_BOOST_URL", "http://localhost:18550")
 MEV_BOOST_BIN = os.getenv("MEV_BOOST_BIN", "mev-boost")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL") or DISCORD_WEBHOOK_URL
 
 CPU_THRESHOLD = int(os.getenv("CPU_THRESHOLD", "80"))
 RAM_THRESHOLD = int(os.getenv("RAM_THRESHOLD", "85"))
@@ -160,9 +161,10 @@ def make_bar(percent, length=10):
     return "█" * filled + "░" * (length - filled)
 
 
-def send_discord_alert(title, status_fields, critical=False):
+def send_discord_alert(title, status_fields, critical=False, webhook_url=None):
     """Send alert to Discord with formatted embed."""
-    if not DISCORD_WEBHOOK_URL:
+    webhook_url = webhook_url or DISCORD_WEBHOOK_URL
+    if not webhook_url:
         print("⚠️ WARNING: DISCORD_WEBHOOK_URL not set")
         return False
 
@@ -180,7 +182,7 @@ def send_discord_alert(title, status_fields, critical=False):
 
     try:
         response = requests.post(
-            DISCORD_WEBHOOK_URL,
+            webhook_url,
             json=payload,
             timeout=10
         )
