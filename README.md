@@ -1,25 +1,23 @@
 # monitoring-lido
 
-Ce projet contient un script Python pour surveiller l'état d'un validateur Lighthouse.
+Ce projet contient un script Python pour surveiller l'état de plusieurs validateurs Lighthouse.
 
 ## Fonctionnalités
 
-- Surveille l'état du validateur Lighthouse.
-- Envoie des notifications sur Discord si le validateur est hors ligne.
+- Surveille l'état de plusieurs validateurs Lighthouse (`VALIDATOR_IDS`).
+- Envoie une notification Discord groupée quand des validateurs passent hors ligne ou reviennent en ligne.
 - Gère les redémarrages inattendus du nœud en conservant l'état entre les exécutions.
 
 ## Configuration
 
-Le script utilise les variables d'environnement pour sa configuration. Créez un fichier `.env` à la racine du projet avec les informations suivantes :
+Le script utilise les variables d'environnement pour sa configuration. Copiez `.env.example` en `.env` à la racine du projet et adaptez-le :
 
-```env
-BEACON_NODE_URL=http://localhost:5052
-VALIDATOR_ID=YOUR_VALIDATOR_ID_OR_PUBLIC_KEY
-DISCORD_WEBHOOK_URL=YOUR_DISCORD_WEBHOOK_URL
+```bash
+cp .env.example .env
 ```
 
 - `BEACON_NODE_URL`: L'URL de votre nœud Lighthouse Beacon.
-- `VALIDATOR_ID`: L'ID public de votre validateur ou son index.
+- `VALIDATOR_IDS`: Liste d'index ou de clés publiques de validateurs, séparés par des virgules (`VALIDATOR_ID` reste accepté pour un seul validateur).
 - `DISCORD_WEBHOOK_URL`: L'URL du webhook Discord pour envoyer les notifications.
 
 ## Installation et Exécution
@@ -29,7 +27,7 @@ DISCORD_WEBHOOK_URL=YOUR_DISCORD_WEBHOOK_URL
     ```bash
     python3 -m venv .venv
     source .venv/bin/activate
-    pip install requests
+    pip install requests python-dotenv psutil
     ```
 
 2.  **Exécutez le script :**

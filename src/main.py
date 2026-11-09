@@ -9,7 +9,7 @@ load_dotenv()
 
 # Configuration from environment variables
 BEACON_NODE_URL = os.getenv("BEACON_NODE_URL", "http://localhost:5052")
-VALIDATOR_ID = os.getenv("VALIDATOR_ID")
+VALIDATOR_IDS = [v.strip() for v in (os.getenv("VALIDATOR_IDS") or os.getenv("VALIDATOR_ID") or "").split(",") if v.strip()]
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 SLOTS_PER_EPOCH = 32
 MAX_EFFECTIVE_BALANCE_GWEI = 32_000_000_000
@@ -17,20 +17,22 @@ MAX_EFFECTIVE_BALANCE_GWEI = 32_000_000_000
 # Path for storing last known status (in the temporary directory)
 STATUS_FILE = os.path.join(os.getenv("GEMINI_TMP_DIR", "/tmp"), "validator_status.json")
 
-def read_last_status():
-    """Reads the last known validator status from a file."""
+def read_all_status():
+    """Reads the last known status of every validator ({id: status}) from a file."""
     if os.path.exists(STATUS_FILE):
         with open(STATUS_FILE, 'r') as f:
             try:
-                return json.load(f)
+                data = json.load(f)
             except json.JSONDecodeError:
-                return {"is_online": True, "last_message_sent": None} # Default to online if file is corrupt
-    return {"is_online": True, "last_message_sent": None} # Default to online if no file
+                return {}
+        if isinstance(data, dict) and "is_online" not in data:
+            return data
+    return {}
 
-def write_current_status(is_online, last_message_sent, balance=None, epoch=None):
-    """Writes the current validator status to a file."""
+def write_all_status(statuses):
+    """Writes the status of every validator to a file."""
     with open(STATUS_FILE, 'w') as f:
-        json.dump({"is_online": is_online, "last_message_sent": last_message_sent, "balance": balance, "epoch": epoch}, f)
+        json.dump(statuses, f)
 
 def send_discord_message(message_content, webhook_url):
     """Sends a message to a Discord webhook."""
@@ -96,7 +98,7 @@ def check_validator_status(validator_id, beacon_node_url):
         return False, f"Could not connect to Lighthouse Beacon Node at {beacon_node_url}. Is it running?"
     except requests.exceptions.HTTPError as http_err:
         if response.status_code == 404:
-            return False, f"Error 404: Validator with ID '{validator_id}' not found or invalid endpoint. Check VALIDATOR_ID."
+            return False, f"Error 404: Validator with ID '{validator_id}' not found or invalid endpoint. Check VALIDATOR_IDS."
         else:
             return False, f"HTTP error occurred: {http_err} - Status: {response.status_code} - Response: {response.text}"
     except json.JSONDecodeError:
@@ -141,36 +143,44 @@ def check_performance(validator_id, beacon_node_url, last_status):
     return not problems, "; ".join(problems) or "active_ongoing", balance, epoch
 
 def main():
-    print(f"Starting validator monitoring for {VALIDATOR_ID}...")
+    if not VALIDATOR_IDS:
+        print("Error: VALIDATOR_IDS environment variable is not set.")
+        return
 
-    current_state_online, reason = check_validator_status(VALIDATOR_ID, BEACON_NODE_URL)
-    last_status = read_last_status()
-    was_online = last_status.get("is_online", True) # Default to True if not found
-    balance, epoch = last_status.get("balance"), last_status.get("epoch")
-    if current_state_online:
-        current_state_online, reason, balance, epoch = check_performance(VALIDATOR_ID, BEACON_NODE_URL, last_status)
+    print(f"Starting validator monitoring for {len(VALIDATOR_IDS)} validators...")
+    statuses = read_all_status()
+    went_offline, back_online = [], []
 
-    if current_state_online and not was_online:
-        message = f"✅ Validator {VALIDATOR_ID} is back ONLINE. ({reason})"
+    for vid in VALIDATOR_IDS:
+        last = statuses.get(vid, {})
+        was_online = last.get("is_online", True)
+        online, reason = check_validator_status(vid, BEACON_NODE_URL)
+        balance, epoch = last.get("balance"), last.get("epoch")
+        if online:
+            online, reason, balance, epoch = check_performance(vid, BEACON_NODE_URL, last)
+
+        if online and not was_online:
+            back_online.append(f"{vid} ({reason})")
+        elif not online and was_online:
+            went_offline.append(f"{vid}: {reason}")
+        elif not online:
+            print(f"⚠️ Validator {vid} is still OFFLINE. ({reason})")
+        else:
+            print(f"✅ Validator {vid} is ONLINE. ({reason})")
+
+        statuses[vid] = {"is_online": online, "last_message_sent": reason, "balance": balance, "epoch": epoch}
+
+    messages = []
+    if went_offline:
+        messages.append(f"🚨 {len(went_offline)} validator(s) OFFLINE:\n" + "\n".join(went_offline))
+    if back_online:
+        messages.append(f"✅ {len(back_online)} validator(s) back ONLINE:\n" + "\n".join(back_online))
+    if messages:
+        message = "\n\n".join(messages)
         print(message)
         send_discord_message(message, DISCORD_WEBHOOK_URL)
-        write_current_status(True, message, balance, epoch)
-    elif not current_state_online and was_online:
-        message = f"🚨 Validator {VALIDATOR_ID} is OFFLINE! ({reason})"
-        print(message)
-        send_discord_message(message, DISCORD_WEBHOOK_URL)
-        write_current_status(False, message, balance, epoch)
-    elif not current_state_online and not was_online:
-        # Still offline, log but don't resend Discord message unless it was a different reason (optional: can add a timestamp check)
-        print(f"⚠️ Validator {VALIDATOR_ID} is still OFFLINE. ({reason})")
-        # To avoid spamming, we only send a new message if the previous one wasn't sent or if the reason changes significantly.
-        # For simplicity here, we'll only send on state change (online -> offline or vice versa).
-        # A more advanced version might resend after a long period of being offline or if the error reason changes.
-        # For now, just update the reason in the status file.
-        write_current_status(False, reason, balance, epoch) # Update reason, but don't change 'is_online' if it's already False
-    else:
-        print(f"✅ Validator {VALIDATOR_ID} is ONLINE. ({reason})")
-        write_current_status(True, reason, balance, epoch)
+
+    write_all_status({k: v for k, v in statuses.items() if k in VALIDATOR_IDS})
 
 if __name__ == "__main__":
     main()

@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**monitoring-lido** is a Python script that monitors the status of a Lighthouse Ethereum validator and sends Discord notifications when the validator goes offline or comes back online. The script is designed to be lightweight and cron-friendly, running periodically to check validator health.
+**monitoring-lido** is a Python script that monitors the status of several Lighthouse Ethereum validators and sends grouped Discord notifications when validators go offline or come back online. The script is designed to be lightweight and cron-friendly, running periodically to check validator health.
 
 ### Key Constraints
 - Python >= 3.12
-- No heavy frameworks, minimal dependencies (only `requests`)
+- No heavy frameworks, minimal dependencies (`requests`, `python-dotenv`, `psutil`)
 - Cron-friendly execution with state persistence
 - No database required
 
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install requests
+pip install requests python-dotenv psutil
 ```
 
 ### Running the Script
@@ -27,12 +27,7 @@ python src/main.py
 ```
 
 ### Environment Variables
-Configure a `.env` file at the project root:
-```env
-BEACON_NODE_URL=http://localhost:5052
-VALIDATOR_ID=YOUR_VALIDATOR_ID_OR_PUBLIC_KEY
-DISCORD_WEBHOOK_URL=YOUR_DISCORD_WEBHOOK_URL
-```
+Copy `.env.example` to `.env` (git-ignored) at the project root. `VALIDATOR_IDS` is a comma-separated list of validator indexes or public keys (legacy single `VALIDATOR_ID` is still accepted as fallback).
 
 ### Cron Integration
 The script is designed for cron execution. Example entry to run every 5 minutes:
@@ -42,19 +37,20 @@ The script is designed for cron execution. Example entry to run every 5 minutes:
 
 ## Architecture
 
-The codebase is intentionally simple with a single script (`src/main.py`) that:
+The codebase is intentionally simple with a main script (`src/main.py`, validator monitoring; `alert.py`, `health-check.py` and `common.py` handle node/service alerts and reports) that:
 
 1. **Status Checking**: Queries the Lighthouse Beacon Node API (`/eth/v1/beacon/states/head/validators/{id}`) to fetch validator status
-2. **State Persistence**: Reads/writes validator status to a JSON file (`/tmp/validator_status.json` or `$GEMINI_TMP_DIR/validator_status.json`) to detect state changes across cron runs
+2. **State Persistence**: Reads/writes validator status per-validator status (`{id: status}`) to a JSON file (`/tmp/validator_status.json` or `$GEMINI_TMP_DIR/validator_status.json`) to detect state changes across cron runs
 3. **State Change Detection**: Compares current status with last known status to determine if validator went online/offline
-4. **Notifications**: Sends Discord webhook notifications only on state transitions (online → offline or offline → online), avoiding spam
+4. **Notifications**: Sends one grouped Discord webhook message per run, only for state transitions (online → offline or offline → online), avoiding spam
 5. **Error Handling**: Gracefully handles network errors, timeouts, and API issues with detailed logging
 
 ### Key Functions
 - `check_validator_status()`: Queries Beacon Node API with error handling
-- `read_last_status()` / `write_current_status()`: Manages persistent state across runs
+- `check_performance()`: Checks slashing, balance trend and attestation liveness
+- `read_all_status()` / `write_all_status()`: Manages per-validator persistent state across runs
 - `send_discord_message()`: Posts to Discord webhook with error recovery
-- `main()`: Orchestrates the monitoring flow
+- `main()`: Loops over `VALIDATOR_IDS`, then sends grouped notifications
 
 ## Important Notes for Development
 
